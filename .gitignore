@@ -37,3 +37,6 @@ htmlcov/
 
 # Docker files
 docker-compose.override.yml
+
+#output piper-tts
+output.wav
