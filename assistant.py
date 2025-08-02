@@ -4,15 +4,12 @@ from audio.tts import Pyttsx3TTS
 from audio.sound_player import SoundPlayer
 from api.api_client import APIClient
 from recognizer.speech_recognizer import SpeechRecognizer # you can switch to recognizer.speech_recognizer_pocketsphinx: lower performances
-import speech_recognition as sr
 import config
 import random
 import time
 from document.rag_system import RagSystem
 from enum import Enum, auto
-import threading
-import queue
-# -*- coding: utf-8 -*-
+# -- coding: utf-8 --
 
 class AssistantState(Enum):
     IDLE = auto()
@@ -99,22 +96,7 @@ class VoiceAssistant:
         process = Process(target=self.sound_player.play_sound, args=(sound_file,))
         process.start()
 
-    def threaded_listen(self, result_queue, stop_event, timeout):
-        try:
-            # Accumula i partial e i final result in una lista
-            partials = []
-            for partial in self.speech_recognizer.listen(timeout=timeout):
-                if stop_event.is_set():
-                    break
-                # Puoi processare qui ogni parola/frase parziale se vuoi
-                partials.append(partial)
-            # Alla fine, unisci i partial per ottenere il comando completo
-            command = " ".join(partials).strip()
-            if not stop_event.is_set():
-                result_queue.put(command)
-        except sr.WaitTimeoutError:
-            if not stop_event.is_set():
-                result_queue.put(None)
+    # threaded_listen rimossa: ora si usa direttamente listen()
 
     def run(self):
         logging.info("Starting Voice Assistant...")
@@ -137,16 +119,10 @@ class VoiceAssistant:
         while True:
             try:
                 if state == AssistantState.COMMAND:
-                    result_queue = queue.Queue()
-                    stop_event = threading.Event()
-                    listener = threading.Thread(target=self.threaded_listen, args=(result_queue, stop_event, config.LISTEN_TIMEOUT))
-                    listener.start()
-                    listener.join(timeout=config.LISTEN_TIMEOUT + 1)
-                    stop_event.set()
-                    try:
-                        command = result_queue.get_nowait()
-                    except queue.Empty:
-                        command = None
+                    command = None
+                    for text in self.speech_recognizer.listen(timeout=config.LISTEN_TIMEOUT):
+                        if text.strip():
+                            command = text.strip()  # Prendi sempre l'ultimo non vuoto
                     if command:
                         if config.RAG_WORD in command.lower():
                             self.play_sound_async(config.WAKE_SOUND)
@@ -157,17 +133,10 @@ class VoiceAssistant:
                     # Se timeout, semplicemente continua ad ascoltare
 
                 elif state == AssistantState.RAG:
-                    # In RAG mode ascolta direttamente il comando, poi esce da RAG dopo la risposta
-                    result_queue = queue.Queue()
-                    stop_event = threading.Event()
-                    listener = threading.Thread(target=self.threaded_listen, args=(result_queue, stop_event, config.LISTEN_TIMEOUT))
-                    listener.start()
-                    listener.join(timeout=config.LISTEN_TIMEOUT + 1)
-                    stop_event.set()
-                    try:
-                        rag_command = result_queue.get_nowait()
-                    except queue.Empty:
-                        rag_command = None
+                    rag_command = None
+                    for text in self.speech_recognizer.listen(timeout=config.LISTEN_TIMEOUT):
+                        if text.strip():
+                            rag_command = text.strip()  # Prendi sempre l'ultimo non vuoto
                     if rag_command:
                         self.process_rag_command(rag_command, searcher)
                         self.play_sound_async(config.STOP_SOUND)
@@ -180,4 +149,3 @@ class VoiceAssistant:
             except Exception as e:
                 logging.error(f"Error in the main loop: {e}")
                 time.sleep(1)
-
